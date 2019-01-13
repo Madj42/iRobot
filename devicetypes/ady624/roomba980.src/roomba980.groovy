@@ -1,9 +1,10 @@
 /**
-*  iRobot Roomba v2.0
+*  iRobot Roomba v2.1
 *. 900 series - Virtual Switch
 *
 *  Copyright 2016 Steve-Gregory
 *  Modified by Adrian Caramaliu to add support for v2 local API
+*  Modified by Justin Dybedahl to fix local API polling and add battery low state reporting
 *
 *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
 *  in compliance with the License. You may obtain a copy of the License at:
@@ -23,11 +24,12 @@ def getRoombaStates() {
     def ROOMBA_BIN_FULL = 16
     def ROOMBA_NOT_UPRIGHT = 7
     def ROOMBA_IN_THE_DARK = 8
-    def ROOMBA_STATES = ['ready': ROOMBA_READY, 'stuck': ROOMBA_STUCK, 'full': ROOMBA_BIN_FULL, 'tilted': ROOMBA_NOT_UPRIGHT, 'dark': ROOMBA_IN_THE_DARK]
+    def ROOMBA_BATTERYLOW = 15
+    def ROOMBA_STATES = ['ready': ROOMBA_READY, 'stuck': ROOMBA_STUCK, 'full': ROOMBA_BIN_FULL, 'tilted': ROOMBA_NOT_UPRIGHT, 'dark': ROOMBA_IN_THE_DARK, 'batterylow': ROOMBA_BATTERYLOW]
     return ROOMBA_STATES
 }
 metadata {
-    definition (name: "Roomba980", namespace: "ady624", author: "Steve Gregory & Adrian Caramaliu") {
+    definition (name: "Roomba980", namespace: "madj42", author: "Steve Gregory, Adrian Caramaliu, and Justin Dybedahl") {
         capability "Battery"
         capability "Switch"
         capability "Refresh"
@@ -120,8 +122,8 @@ tiles {
         state "docking", label: 'Resume', backgroundColor: "#ffffff"
         state "starting", label: 'Resume', backgroundColor: "#ffffff"
         state "cleaning", label: 'Resume', backgroundColor: "#ffffff"
-        state "pausing", label: 'Resume', backgroundColor: "#79b821", action: "resume"
-        state "paused", label: 'Resume', backgroundColor: "#ffffff", action: "resume"
+        state "pausing", label: 'Resume', backgroundColor: "#79b821"
+        state "paused", label: 'Resume', backgroundColor: "#ffffff"
         state "bin-full", label: 'Bin full', backgroundColor: "#bc2323"
         state "resuming", label: 'Resuming..', backgroundColor: "#79b821"
     }
@@ -164,13 +166,14 @@ tiles {
 def updated() {
     //log.debug "Updated settings ${settings}..
     schedule("0 0/${settings.pollInterval} * * * ?", poll)  // 4min polling is normal for irobots
-    poll()
+    //poll()
 }
 // Configuration
 def configure() {
     log.debug "Configuring.."
     poll()
 }
+
 //Timed Session
 def setTimeRemaining(timeNumber) {
     log.debug "User requested setting the Time remaining to ${timeNumber}"
@@ -195,7 +198,7 @@ def setConsumableStatus(statusString) {
 //Refresh
 def refresh() {
     log.debug "Executing 'refresh'"
-    return poll()
+    return poll
 }
 //Polling
 def pollHistory() {
@@ -211,7 +214,7 @@ def poll() {
     log.debug "Polling for status ----"
     sendEvent(name: "headline", value: "Polling status API", displayed: false)
     state.RoombaCmd = "getStatus"
-    return localAPI ? local_poll() : apiGet()
+	return localAPI ? local_poll() : apiGet()
 }
 // Switch methods
 def on() {
@@ -291,6 +294,7 @@ def parse(description) {
 }
 
 def apiGet() {
+	log.debug "apiget"
 	if (local) return
     def request_query = ""
     def request_host = ""
@@ -511,6 +515,8 @@ def parse_not_ready_status(readyCode) {
       return "${robotName} is not upright. Place robot on flat surface to continue."
     } else if (readyCode == ROOMBA_STATES['stuck']) {
       return "${robotName} is stuck. Move robot to continue."
+    } else if (readyCode == ROOMBA_STATES['batterylow']) {
+      return "${robotName}'s battery is low. Please send Roomba to dock or place on dock."
     } else {
       return "${robotName} returned notReady=${readyCode}. See iRobot app for details."
     }
@@ -568,8 +574,9 @@ def lanEventHandler(evt) {
 }
 
 private local_get(path, cbk) {
-	def host = "$roomba_host:$roomba_port"
-	new physicalgraph.device.HubAction("""GET $path HTTP/1.1\r\nHOST: $host\r\n\r\n""", physicalgraph.device.Protocol.LAN, null, [callback: cbk])
+    def host = "$roomba_host:$roomba_port"
+
+	sendHubCommand(new physicalgraph.device.HubAction("""GET $path HTTP/1.1\r\nHOST: $host\r\n\r\n""", physicalgraph.device.Protocol.LAN, null, [callback: cbk])) 
 }
 
 void local_dummy_cbk(physicalgraph.device.HubResponse hubResponse) {
@@ -593,7 +600,6 @@ void local_poll_cbk(physicalgraph.device.HubResponse hubResponse) {
 
     def new_status = get_robot_status(current_phase, current_cycle, current_charge, readyCode)
     def roomba_value = get_robot_enum(current_phase, readyCode)
-
     log.debug("Robot updates -- ${roomba_value} + ${new_status}")
     //Set the state object
     if(roomba_value == "cleaning") {
