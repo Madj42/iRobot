@@ -1,10 +1,10 @@
 /**
-*  iRobot Roomba v2.1
-*. 900 series - Virtual Switch
+*  iRobot Roomba v2.2
+*. 900/i7 series - Virtual Switch
 *
 *  Copyright 2016 Steve-Gregory
 *  Modified by Adrian Caramaliu to add support for v2 local API
-*  Modified by Justin Dybedahl to fix local API polling and add battery low state reporting
+*  Modified by Justin Dybedahl to fix local API polling, fix tile actions, and add battery low state reporting
 *
 *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
 *  in compliance with the License. You may obtain a copy of the License at:
@@ -67,7 +67,7 @@ preferences {
     section("Roomba Local Settings") {
     	input type: "paragraph", title: "Fill these parameters if using a local REST gateway"
         input "roomba_host", "string", title:"IP of Roomba local REST Gateway", displayDuringSetup: true
-        input "roomba_port", "number", range: "1..65535", defaultValue: 3000, title:"IP of Roomba local REST Gateway", displayDuringSetup: true
+        input "roomba_port", "number", range: "1..65535", defaultValue: 3000, title:"Port of Roomba local REST Gateway", displayDuringSetup: true
     }
     section("Roomba Cloud Credentials") {
         input type: "paragraph", title: "Please fill in the Roomba credentials below if using a Cloud connection to your robot", description: "The username/password can be retrieved via node.js & dorita980", displayDuringSetup: true
@@ -104,26 +104,26 @@ tiles {
         state "cleaning", label: 'Not on Dock', backgroundColor: "#ffffff", nextState: "docking", action: "dock"
         state "pausing", label: 'Not on Dock', backgroundColor: "#ffffff", nextState: "docking", action: "dock"
         state "paused", label: 'Dock', backgroundColor: "#ffffff", nextState: "docking", action: "dock"
-        state "bin-full", label: 'Bin full', backgroundColor: "#bc2323"
-        state "resuming", label: 'Not on Dock', backgroundColor: "#ffffff", defaultState: true, action: "dock"
+        state "bin-full", label: 'Bin full', backgroundColor: "#bc2323", nextState: "docking", action: "dock"
+        state "resuming", label: 'Not on Dock', backgroundColor: "#ffffff", defaultState: true, nextState: "docking", action: "dock"
     }
     valueTile("PAUSE", "device.status", width: 2, height: 2) {
         state "docked", label: 'Pause', backgroundColor: "#ffffff", defaultState: true
         state "docking", label: 'Pause', backgroundColor: "#ffffff"
-        state "starting", label: 'Pause', backgroundColor: "#ffffff", action: "pause"
-        state "cleaning", label: 'Pause', backgroundColor: "#ffffff", action: "pause"
+        state "starting", label: 'Pause', backgroundColor: "#ffffff", nextState: "pausing", action: "pause"
+        state "cleaning", label: 'Pause', backgroundColor: "#ffffff", nextState: "pausing", action: "pause"
         state "pausing", label: 'Pausing..', backgroundColor: "#79b821"
         state "paused", label: 'Paused', backgroundColor: "#79b821"
         state "bin-full", label: 'Bin full', backgroundColor: "#bc2323"
-        state "resuming", label: 'Pause', backgroundColor: "#ffffff", action: "pause"
+        state "resuming", label: 'Pause', backgroundColor: "#ffffff", nextState: "pausing", action: "pause"
     }
     valueTile("RESUME", "device.status", width: 2, height: 2) {
         state "docked", label: 'Resume', backgroundColor: "#ffffff", defaultState: true
         state "docking", label: 'Resume', backgroundColor: "#ffffff"
         state "starting", label: 'Resume', backgroundColor: "#ffffff"
         state "cleaning", label: 'Resume', backgroundColor: "#ffffff"
-        state "pausing", label: 'Resume', backgroundColor: "#79b821"
-        state "paused", label: 'Resume', backgroundColor: "#ffffff"
+        state "pausing", label: 'Resume', backgroundColor: "#79b821", nextState: "resuming", action: "switch.on"
+        state "paused", label: 'Resume', backgroundColor: "#ffffff", nextState: "resuming", action: "switch.on"
         state "bin-full", label: 'Bin full', backgroundColor: "#bc2323"
         state "resuming", label: 'Resuming..', backgroundColor: "#79b821"
     }
@@ -165,6 +165,7 @@ tiles {
 // Settings updated
 def updated() {
     //log.debug "Updated settings ${settings}..
+    runIn(3, "updateDeviceNetworkID")
     schedule("0 0/${settings.pollInterval} * * * ?", poll)  // 4min polling is normal for irobots
     //poll()
 }
@@ -600,7 +601,7 @@ void local_poll_cbk(physicalgraph.device.HubResponse hubResponse) {
 
     def new_status = get_robot_status(current_phase, current_cycle, current_charge, readyCode)
     def roomba_value = get_robot_enum(current_phase, readyCode)
-    log.debug("Robot updates -- ${roomba_value} + ${new_status}")
+    log.debug("Robot updates -- 2 ${roomba_value} + ${new_status}")
     //Set the state object
     if(roomba_value == "cleaning") {
         state.switch = "on"
@@ -684,4 +685,23 @@ private local_pauseAndDock() {
 	local_get('/api/local/action/pause', 'local_dummy_cbk')
     pause(1000)
 	local_get('/api/local/action/dock', 'local_dummy_cbk')
+}
+
+def updateDeviceNetworkID() {
+	log.debug "Executing 'updateDeviceNetworkID'"
+    def iphex = convertIPtoHex(roomba_host).toUpperCase()
+    def porthex = convertPortToHex(roomba_port).toUpperCase()
+	device.setDeviceNetworkId(iphex + ":" + porthex)
+}
+
+private String convertIPtoHex(ipAddress) { 
+    String hex = ipAddress.tokenize( '.' ).collect {  String.format( '%02x', it.toInteger() ) }.join()
+    //log.debug "IP address entered is $ipAddress and the converted hex code is $hex"
+    return hex
+}
+
+private String convertPortToHex(port) {
+    String hexport = port.toString().format( '%04x', port.toInteger() )
+    //log.debug hexport
+    return hexport
 }
