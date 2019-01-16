@@ -22,10 +22,11 @@ def getRoombaStates() {
     def ROOMBA_READY = 0
     def ROOMBA_STUCK = 1
     def ROOMBA_BIN_FULL = 16
+    def ROOMBA_DEBRIS_EXTRACTOR = 6
     def ROOMBA_NOT_UPRIGHT = 7
     def ROOMBA_IN_THE_DARK = 8
     def ROOMBA_BATTERYLOW = 15
-    def ROOMBA_STATES = ['ready': ROOMBA_READY, 'stuck': ROOMBA_STUCK, 'full': ROOMBA_BIN_FULL, 'tilted': ROOMBA_NOT_UPRIGHT, 'dark': ROOMBA_IN_THE_DARK, 'batterylow': ROOMBA_BATTERYLOW]
+    def ROOMBA_STATES = ['ready': ROOMBA_READY, 'stuck': ROOMBA_STUCK, 'full': ROOMBA_BIN_FULL, 'tilted': ROOMBA_NOT_UPRIGHT, 'dark': ROOMBA_IN_THE_DARK, 'batterylow': ROOMBA_BATTERYLOW, 'debrisextractors': ROOMBA_DEBRIS_EXTRACTOR]
     return ROOMBA_STATES
 }
 metadata {
@@ -518,6 +519,8 @@ def parse_not_ready_status(readyCode) {
       return "${robotName} is stuck. Move robot to continue."
     } else if (readyCode == ROOMBA_STATES['batterylow']) {
       return "${robotName}'s battery is low. Please send Roomba to dock or place on dock."
+    } else if (readyCode == ROOMBA_STATES['debrisextractors']) {
+      return "${robotName}'s debris extractors are blocked. Please clear them."
     } else {
       return "${robotName} returned notReady=${readyCode}. See iRobot app for details."
     }
